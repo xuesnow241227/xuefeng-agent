@@ -335,16 +335,32 @@ python agent.py
 
 Windows 用户直接双击 **`启动.bat`**。
 
-### 模型切换
+### 模型选择
+
+任何 OpenAI 兼容协议的模型都能用。但不同模型效果差异很大：
+
+| 模型 | 推荐度 | 中文 | 指令遵循 | 速度 | 费用 | 说明 |
+|------|--------|------|---------|------|------|------|
+| **DeepSeek V3** | 首选 | 极好 | 强 | 快 | ~1元/百万token | 综合最佳 |
+| **通义千问 Qwen-Plus** | 推荐 | 极好 | 强 | 快 | ~2元/百万token | 有免费额度 |
+| **智谱 GLM-4** | 推荐 | 好 | 较强 | 快 | ~1元/百万token | 国产稳定 |
+| **Moonshot v1** | 可选 | 好 | 较强 | 快 | ~2元/百万token | 128K长上下文 |
+| **GPT-4o** | 可选 | 好 | 极强 | 中 | 较贵 | 需国外网络 |
+| **Ollama 本地** | 可用 | 看模型 | 弱-中 | 看配置 | 免费 | 推荐 qwen2.5:14b+ |
+
+**不推荐**：
+- 7B 级别小模型 — 无法稳定遵循复杂指令，容易复读、格式错乱
+- DeepSeek R1 — 推理模型会自言自语，不适合对话场景
 
 在 `.env` 里设置 `LLM_PROVIDER` 即可，不用记 base_url：
 
 ```bash
-LLM_PROVIDER=deepseek   # DeepSeek（推荐）
+LLM_PROVIDER=deepseek   # DeepSeek（首选）
 LLM_PROVIDER=qwen       # 通义千问
 LLM_PROVIDER=glm        # 智谱 GLM
+LLM_PROVIDER=moonshot   # Moonshot
 LLM_PROVIDER=openai     # GPT-4o
-LLM_PROVIDER=ollama     # 本地模型（免费离线）
+LLM_PROVIDER=ollama     # 本地模型
 ```
 
 完整配置说明 → [TUTORIAL.md](TUTORIAL.md)
