@@ -10,6 +10,13 @@ Usage:
 import os, sys, json, re, urllib.request, urllib.parse, urllib.error
 from openai import OpenAI
 
+# 高考数据模块
+try:
+    from gaokao_data import query_admission, format_admission_info
+    HAS_DATA_MODULE = True
+except ImportError:
+    HAS_DATA_MODULE = False
+
 def read_clipboard():
     """读取 Windows 剪贴板文本。"""
     try:
@@ -323,24 +330,33 @@ class GaokaoAdvisor:
             hint = f"(系统自动识别到: {', '.join(updates)}。请在回复中确认并追问缺失信息。)"
             messages.append({"role": "system", "content": hint})
 
-        # 搜索（更积极）
+        # 搜索（更积极 + 真实数据）
         search_results = None
         if CONFIG["enable_search"] and should_search(user_msg):
-            # 构建更精准的搜索词
-            search_query = user_msg[:100]  # 直接用用户问题搜
-            if "大学" in user_msg and ("怎么样" in user_msg or "好不好" in user_msg):
-                # 搜学校优势劣势
-                school = re.findall(r'[一-鿿]{2,6}大学', user_msg)
-                if school:
-                    search_query = f"{school[0]} 王牌专业 优势 劣势 就业 2025"
-            elif "分" in user_msg and ("能上" in user_msg or "能报" in user_msg):
-                search_query = f"{user_msg[:80]} 录取分数线 位次"
-            search_results = web_search(search_query)
-            if search_results:
-                search_hint = f"【搜索结果 - {search_query}】\n" + "\n".join(
-                    f"· {r}" for r in search_results[:3]
-                )
-                messages.append({"role": "system", "content": search_hint})
+            # 尝试用数据模块搜真实录取数据
+            school_match = re.findall(r'[一-鿿]{2,6}(?:大学|学院)', user_msg)
+            prov_match = re.findall(r'(北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|广西|海南|四川|贵州|云南|陕西|甘肃|青海|台湾|内蒙古|西藏|宁夏|新疆)', user_msg)
+
+            if school_match and prov_match and HAS_DATA_MODULE:
+                try:
+                    raw = query_admission(school_match[0], prov_match[0])
+                    admission_text = format_admission_info(raw)
+                    if admission_text and "暂无" not in admission_text:
+                        search_hint = f"【真实录取数据搜索】\n{admission_text}"
+                        messages.append({"role": "system", "content": search_hint})
+                        search_results = "data_module_used"
+                except:
+                    pass
+
+            # 降级：用普通搜索
+            if not search_results:
+                search_query = user_msg[:100]
+                search_results = web_search(search_query)
+                if search_results:
+                    search_hint = f"【搜索结果】\n" + "\n".join(
+                        f"· {r}" for r in search_results[:3]
+                    )
+                    messages.append({"role": "system", "content": search_hint})
 
         # 调用 LLM
         try:
