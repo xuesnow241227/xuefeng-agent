@@ -60,7 +60,7 @@ def resolve_config():
             "base_url": os.getenv("LLM_BASE_URL", preset["base_url"]),
             "api_key": os.getenv("LLM_API_KEY", ""),
             "model": os.getenv("LLM_MODEL", preset["model"]),
-            "max_tokens": 4000,
+            "max_tokens": 8000,
             "temperature": 0.7,
             "enable_search": True,
         }
@@ -68,7 +68,7 @@ def resolve_config():
         "base_url": os.getenv("LLM_BASE_URL", "https://api.deepseek.com"),
         "api_key": os.getenv("LLM_API_KEY", ""),
         "model": os.getenv("LLM_MODEL", "deepseek-chat"),
-        "max_tokens": 4000,
+        "max_tokens": 8000,
         "temperature": 0.7,
         "enable_search": True,
     }
@@ -190,21 +190,49 @@ def is_consultation_intent(msg):
 
 # ── 搜索功能 ─────────────────────────────────────────
 def web_search(query, max_results=3):
-    """简单的网页搜索（使用百度搜索URL，Agent在后台获取摘要）。"""
+    """搜索并获取网页内容。先用百度搜索找URL，再抓取页面文字。"""
+    results = []
     try:
+        # Step 1: 百度搜索获取结果链接
         url = SEARCH_ENGINE + urllib.parse.quote(query)
         req = urllib.request.Request(url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         })
         with urllib.request.urlopen(req, timeout=10) as resp:
             html = resp.read().decode("utf-8", errors="ignore")
-        # 简单提取搜索结果摘要
-        snippets = re.findall(r'<span class="content-right_[^"]*">(.*?)</span>', html)
-        results = []
-        for s in snippets[:max_results]:
-            clean = re.sub(r'<[^>]+>', '', s).strip()
-            if len(clean) > 20:
-                results.append(clean)
+
+        # Step 2: 提取搜索结果URL（尝试多种匹配模式）
+        urls = re.findall(r'href="(https?://[^"]+)"', html)
+        # 过滤掉百度自己的链接，保留真实网站
+        valid_urls = [u for u in urls if 'baidu.com' not in u and len(u) > 30][:max_results]
+
+        # Step 3: 抓取每个结果页面的文字内容
+        for target_url in valid_urls:
+            try:
+                page_req = urllib.request.Request(target_url, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                })
+                with urllib.request.urlopen(page_req, timeout=8) as page_resp:
+                    page_html = page_resp.read().decode("utf-8", errors="ignore")
+                # 去掉所有标签，提取可见文字
+                clean = re.sub(r'<script[^>]*>.*?</script>', '', page_html, flags=re.DOTALL)
+                clean = re.sub(r'<style[^>]*>.*?</style>', '', clean, flags=re.DOTALL)
+                clean = re.sub(r'<[^>]+>', ' ', clean)
+                clean = re.sub(r'\s+', ' ', clean).strip()
+                # 取有效内容（100-500字）
+                if len(clean) > 100:
+                    results.append(clean[:500] + "...")
+            except:
+                continue
+
+        if not results:
+            # Step 4: 降级——只取百度摘要
+            snippets = re.findall(r'<span class="content-right_[^"]*">(.*?)</span>', html)
+            for s in snippets[:max_results]:
+                clean = re.sub(r'<[^>]+>', '', s).strip()
+                if len(clean) > 20:
+                    results.append(clean)
+
         return results if results else ["(搜索无结果，建议手动查询官方渠道)"]
     except Exception as e:
         return [f"(搜索暂时不可用: {e})"]
@@ -248,7 +276,9 @@ class GaokaoAdvisor:
 
     def _build_system_message(self):
         """构建系统消息，包含 system prompt + 知识库摘要 + 当前槽位状态。"""
-        kb_summary = self.knowledge_base[:6000] if self.knowledge_base else "(知识库未加载)"
+        # 知识库摘要：取前12000字，优先包含方法论部分
+        kb = self.knowledge_base if self.knowledge_base else ""
+        kb_summary = kb[:12000] if len(kb) > 12000 else kb
         slots_status = slots_summary()
         search_note = ""
         if CONFIG["enable_search"]:
